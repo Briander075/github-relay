@@ -134,19 +134,22 @@ async def receive_github_webhook(
         # Get raw body for signature verification
         body_bytes = await request.body()
         
-        # Verify signature using SHA256 (preferred) or SHA1
+        # Verify signature using HMAC-SHA256 (GitHub standard)
         signature_to_verify = x_github_signature_256 or x_github_signature
         if signature_to_verify:
-            # Calculate expected signature
-            expected_sig = "sha256=" + hashlib.sha256(
-                (settings.webhook_secret + body_bytes.decode()).encode()
+            # GitHub uses: HMAC_SHA256(webhook_secret, raw_body)
+            expected_sig = "sha256=" + hmac.new(
+                settings.webhook_secret.encode(),
+                body_bytes,
+                hashlib.sha256
             ).hexdigest()
             
-            # Handle both sha256= prefix and raw hash
             if not hmac.compare_digest(signature_to_verify, expected_sig):
                 # Try SHA1 for older webhooks
-                expected_sig_sha1 = "sha1=" + hashlib.sha1(
-                    (settings.webhook_secret + body_bytes.decode()).encode()
+                expected_sig_sha1 = "sha1=" + hmac.new(
+                    settings.webhook_secret.encode(),
+                    body_bytes,
+                    hashlib.sha1
                 ).hexdigest()
                 
                 if not hmac.compare_digest(signature_to_verify, expected_sig_sha1):
@@ -155,8 +158,8 @@ async def receive_github_webhook(
             signature_valid = 1
         else:
             signature_valid = 1
-    
-    # Parse body
+    else:
+        signature_valid = 0
     try:
         payload = await request.json()
     except json.JSONDecodeError as e:
@@ -221,7 +224,8 @@ async def receive_github_webhook(
 
 
 @app.post("/api/v1/drain/claim", tags=["Drain"])
-def drain_claim(
+async def drain_claim(
+    request: Request,
     consumer_id: str = Header(..., alias="X-Consumer-Id"),
     limit: int = 10,
     lease_seconds: int = 300,
@@ -230,18 +234,15 @@ def drain_claim(
     
     Authentication: Bearer token required in Authorization header.
     """
-    # Check for bearer token authentication
-    from fastapi import Header
-    from fastapi.responses import JSONResponse
-    import os
+    # Validate bearer token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     
+    token = auth_header[7:]  # Remove "Bearer " prefix
     settings = get_settings()
     
-    if not settings.bearer_token:
-        logger.warning("Bearer token not configured - using bearer_token environment variable")
-    
-    # Simple bearer token validation (can be enhanced for production)
-    if settings.bearer_token and settings.bearer_token != os.getenv("DRAINER_BEARER_TOKEN"):
+    if settings.bearer_token and token != settings.bearer_token:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
     
     # Claim events

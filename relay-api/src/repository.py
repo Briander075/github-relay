@@ -141,6 +141,7 @@ def claim_events(limit: int, consumer_id: str, lease_seconds: int) -> List[Dict[
     
     Returns a list of claimed event dictionaries.
     Includes both pending and expired claimed events for reclaim.
+    Only returns events claimed in the current operation.
     """
     now = ensure_utc_iso8601(datetime.utcnow())
     claim_expires = ensure_utc_iso8601(
@@ -148,6 +149,25 @@ def claim_events(limit: int, consumer_id: str, lease_seconds: int) -> List[Dict[
     )
     
     with get_db_cursor() as cursor:
+        # First, get the list of event IDs that will be claimed
+        cursor.execute(
+            """
+            SELECT id FROM events
+            WHERE status IN ('pending', 'claimed')
+            AND (
+                status = 'pending' 
+                OR (status = 'claimed' AND claim_expires_at < ?)
+            )
+            ORDER BY received_at ASC
+            LIMIT ?
+            """,
+            (now, limit),
+        )
+        event_ids_to_claim = [row[0] for row in cursor.fetchall()]
+        
+        if not event_ids_to_claim:
+            return []
+        
         # Claim eligible events (pending or expired claimed)
         cursor.execute(
             """
@@ -172,7 +192,7 @@ def claim_events(limit: int, consumer_id: str, lease_seconds: int) -> List[Dict[
             (now, claim_expires, consumer_id, now, now, limit),
         )
         
-        # Get the claimed events
+        # Get only the events claimed in this operation (by their IDs)
         cursor.execute(
             """
             SELECT 
@@ -183,10 +203,10 @@ def claim_events(limit: int, consumer_id: str, lease_seconds: int) -> List[Dict[
                 headers_json, signature_valid, duplicate_of_event_id,
                 created_at, updated_at
             FROM events
-            WHERE status = 'claimed' AND claimed_by = ?
+            WHERE id IN (""" + ",".join("?" * len(event_ids_to_claim)) + """)
             ORDER BY received_at ASC
             """,
-            (consumer_id,),
+            event_ids_to_claim,
         )
         
         rows = cursor.fetchall()

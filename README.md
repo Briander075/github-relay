@@ -73,6 +73,40 @@ The project is doing its job when:
 - expired claims become retryable
 - queue state is inspectable
 
+## Running the Drainer
+
+The drainer script can be activated in two ways:
+
+### Primary Trigger: Automatic Background Polling
+The drainer runs automatically via `launchd` (macOS) or `systemd` (Linux) for continuous, hands-off operation.
+
+**macOS (launchd):**
+```bash
+# Load the agent to start automatically at login
+launchctl load ~/Library/LaunchAgents/com.github.relay.drainer.plist
+
+# Unload to stop
+launchctl unload ~/Library/LaunchAgents/com.github.relay.drainer.plist
+```
+
+**Linux (systemd):**
+```bash
+# Enable to start at boot
+sudo systemctl enable github-relay-drainer
+
+# Start immediately
+sudo systemctl start github-relay-drainer
+
+# Stop
+sudo systemctl stop github-relay-drainer
+```
+
+### Secondary Trigger: Manual Run for Testing/Troubleshooting
+For development, debugging, or manual intervention:
+```bash
+python scripts/dev-server.py
+```
+
 ## Suggested way to work
 1. read `ARCHITECTURE.md`
 2. read `SCHEMA_API_SPEC.md`

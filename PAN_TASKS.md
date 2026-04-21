@@ -58,11 +58,16 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - required header validation
 - payload parsing and metadata extraction
 - persistence of validated events
+- idempotent duplicate handling
 
 **Done when:**
 - valid signed webhook is accepted and stored
 - invalid signature returns 401
 - malformed request returns 400
+- duplicate delivery IDs return 200 with `duplicate=true`
+- `/healthz` endpoint returns `{ "ok": true }`
+
+**Status:** ✅ **COMPLETE**
 
 ---
 
@@ -70,13 +75,17 @@ The goal is to keep the work sliced small enough that implementation stays real 
 **Goal:** Prevent duplicate GitHub deliveries from creating queue soup.
 
 **Deliverables:**
-- `github_delivery_id` uniqueness or equivalent idempotency logic
-- duplicate delivery behavior per spec
-- response includes `duplicate=true` when appropriate
+- `github_delivery_id` uniqueness check before insertion
+- Duplicate delivery behavior per spec (return original event_id with `duplicate=true`)
+- Response includes `duplicate=true` when appropriate
+- No second actionable row created for duplicate deliveries
 
 **Done when:**
 - same GitHub delivery can be posted twice without creating two actionable rows
 - tests prove duplicate handling
+- `/github/webhook` returns 200 with `duplicate=true` for repeated deliveries
+
+**Status:** ✅ **COMPLETE**
 
 ---
 
@@ -95,6 +104,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - claimed rows are marked with `claimed_at`, `claim_expires_at`, `claimed_by`
 - concurrent claims do not hand out the same event twice
 
+**Status:** ✅ **COMPLETE**
+
 ---
 
 ### Slice 6: Ack endpoint
@@ -110,6 +121,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - claimed events move to `acked`
 - already acked events are harmless
 - not-owned events are reported cleanly
+
+**Status:** ✅ **COMPLETE**
 
 ---
 

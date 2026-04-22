@@ -174,6 +174,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - drainer can report a local failure reason
 - operator can inspect the failure later
 
+**Status:** ✅ **COMPLETE**
+
 ---
 
 ### Slice 10: Debug/inspection tools

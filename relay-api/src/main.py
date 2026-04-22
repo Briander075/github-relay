@@ -41,7 +41,8 @@ except ImportError:
         get_events_by_github_delivery_id,
         mark_event_duplicate,
         claim_events,
-        ack_events
+        ack_events,
+        report_failure
     )
 
 app = FastAPI(
@@ -342,8 +343,57 @@ async def drain_ack(
         raise HTTPException(status_code=500, detail=f"Failed to ack events: {str(e)}")
     
     logger.info(f"Acknowledged {len(results['acked'])} events for consumer {consumer_id}")
-    
+    logger.info(f"Acknowledged {len(results['acked'])} events for consumer {consumer_id}")
     return results
+
+
+@app.post("/api/v1/drain/fail", tags=["Drain"])
+async def drain_fail(
+    request: Request,
+):
+    """Report a processing failure for an event.
+    
+    Authentication: Bearer token required in Authorization header.
+    """
+    from fastapi import Body
+    
+    settings = get_settings()
+    
+    # Validate bearer token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    if settings.bearer_token and token != settings.bearer_token:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    
+    # Parse request body
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    
+    event_id = body.get("event_id")
+    error_message = body.get("error", "Unknown error")
+    requeue = body.get("requeue", False)
+    
+    if not event_id:
+        raise HTTPException(status_code=400, detail="Missing event_id")
+    
+    # Report failure
+    try:
+        result = report_failure(event_id, error_message, requeue)
+    except Exception as e:
+        logger.error(f"Failed to report failure: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to report failure: {str(e)}")
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+    
+    logger.info(f"Reported failure for event {event_id}: {error_message} (status={result['status']})")
+    
+    return result
 
 
 @app.get("/events", tags=["Events"])

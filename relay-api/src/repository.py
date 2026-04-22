@@ -374,6 +374,64 @@ def ack_event(event_id: str) -> bool:
         return cursor.rowcount > 0
 
 
+def report_failure(event_id: str, error_message: str, requeue: bool = False) -> Dict[str, Any]:
+    """Report a processing failure for an event.
+    
+    Updates last_error and optionally requeues the event to 'pending' state.
+    Returns a dict with 'success' and 'status' fields.
+    """
+    now = ensure_utc_iso8601(datetime.utcnow())
+    
+    with get_db_cursor() as cursor:
+        # First, verify the event exists and get current state
+        cursor.execute(
+            """
+            SELECT id, status, claimed_by, retry_count FROM events WHERE id = ?
+            """,
+            (event_id,),
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            return {"success": False, "error": "Event not found"}
+        
+        event_id, status, claimed_by, retry_count = row
+        
+        if status not in ("pending", "claimed"):
+            return {"success": False, "error": f"Event is in {status} status, not processable"}
+        
+        # Update last_error
+        cursor.execute(
+            """
+            UPDATE events
+            SET 
+                last_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (error_message, now, event_id),
+        )
+        
+        if requeue and status == "claimed":
+            # Return to pending state
+            cursor.execute(
+                """
+                UPDATE events
+                SET 
+                    status = 'pending',
+                    claimed_by = NULL,
+                    claim_expires_at = NULL,
+                    retry_count = retry_count + 1,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, event_id),
+            )
+            return {"success": True, "status": "requeued"}
+        
+        return {"success": True, "status": status}
+
+
 def ack_events(event_ids: List[str], consumer_id: str) -> Dict[str, List[str]]:
     """Acknowledge multiple successfully processed events.
     

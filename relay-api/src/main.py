@@ -396,6 +396,68 @@ async def drain_fail(
     return result
 
 
+@app.get("/api/v1/events", tags=["Events"])
+def list_events(
+    status: Optional[str] = None,
+    repository: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    auth: str = Header(None, alias="Authorization"),
+):
+    """Query events with filtering options for debugging and inspection.
+    
+    Authentication: Bearer token required in Authorization header.
+    """
+    # Validate bearer token
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = auth[7:]
+    settings = get_settings()
+    if settings.bearer_token and token != settings.bearer_token:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    
+    # Query events
+    try:
+        from .repository import query_events
+    except ImportError:
+        from repository import query_events
+    
+    events = query_events(
+        status=status,
+        repository=repository,
+        event_type=event_type,
+        limit=limit,
+        offset=offset
+    )
+    
+    # Build response
+    events_list = []
+    for event in events:
+        events_list.append({
+            "event_id": event["id"],
+            "github_delivery_id": event["github_delivery_id"],
+            "github_event_type": event["github_event_type"],
+            "repository_full_name": event["repository_full_name"],
+            "action": event["action"],
+            "status": event["status"],
+            "retry_count": event["retry_count"],
+            "last_error": event["last_error"],
+            "received_at": event["received_at"].isoformat().replace("+00:00", "Z") if event["received_at"] else None,
+            "claimed_at": event["claimed_at"].isoformat().replace("+00:00", "Z") if event["claimed_at"] else None,
+            "claim_expires_at": event["claim_expires_at"].isoformat().replace("+00:00", "Z") if event["claim_expires_at"] else None,
+            "payload": json.loads(event["payload_json"])
+        })
+    
+    return {
+        "events": events_list,
+        "count": len(events_list),
+        "limit": limit,
+        "offset": offset
+    }
+
+
 @app.get("/events", tags=["Events"])
 def list_events(status: str = None, limit: int = 100, offset: int = 0):
     """List events with optional status filter."""

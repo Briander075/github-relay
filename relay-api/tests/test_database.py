@@ -175,3 +175,58 @@ def test_cleanup_old_events():
     # Verify cleanup works (should return 1 for the acked event)
     count = cleanup_old_ack_events()
     assert count >= 0  # May be 0 if retention period not expired
+
+
+def test_query_events():
+    """Test querying events with filters."""
+    from database import init_db
+    from repository import insert_event, query_events
+    
+    # Initialize database
+    init_db()
+    
+    # Insert multiple events
+    event1_id = insert_event(
+        github_delivery_id="query-test-1",
+        github_event_type="push",
+        payload_json='{"ref": "main"}',
+        repository_full_name="owner/repo1",
+    )
+    
+    event2_id = insert_event(
+        github_delivery_id="query-test-2",
+        github_event_type="pull_request",
+        payload_json='{"action": "opened"}',
+        repository_full_name="owner/repo2",
+    )
+    
+    event3_id = insert_event(
+        github_delivery_id="query-test-3",
+        github_event_type="push",
+        payload_json='{"ref": "develop"}',
+        repository_full_name="owner/repo1",
+    )
+    
+    # Test basic query (no filters)
+    all_events = query_events()
+    assert len(all_events) >= 3
+    
+    # Test status filter
+    pending_events = query_events(status="pending")
+    assert len(pending_events) >= 3
+    
+    # Test repository filter
+    repo_events = query_events(repository="owner/repo1")
+    assert len(repo_events) >= 2
+    
+    # Test event_type filter
+    push_events = query_events(event_type="push")
+    assert len(push_events) >= 2
+    
+    # Test combined filters
+    combined = query_events(status="pending", repository="owner/repo1", event_type="push")
+    assert len(combined) >= 2
+    
+    # Test limit and offset
+    limited = query_events(limit=2, offset=0)
+    assert len(limited) <= 2

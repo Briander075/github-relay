@@ -185,9 +185,13 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - authenticated `GET /api/v1/events`
 - filters by status / repo / event type
 - clear event serialization for debugging
+- unit tests for query_events
 
 **Done when:**
 - recent queue state can be inspected without opening SQLite manually
+- 7 tests passing (including new query_events test)
+
+**Status:** ✅ **COMPLETE**
 
 ---
 

@@ -528,6 +528,75 @@ def mark_event_dead(event_id: str) -> bool:
         return cursor.rowcount > 0
 
 
+def query_events(
+    status: Optional[str] = None,
+    repository: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Query events with filtering options for debugging and inspection.
+    
+    Args:
+        status: Filter by event status (pending, claimed, acked, dead, duplicate)
+        repository: Filter by repository full name (e.g., 'owner/repo')
+        event_type: Filter by GitHub event type (e.g., 'push', 'pull_request')
+        limit: Maximum number of results (default 50)
+        offset: Offset for pagination (default 0)
+    
+    Returns:
+        List of event dictionaries matching the filters.
+    """
+    # Build the query dynamically based on provided filters
+    query = """
+        SELECT 
+            id, github_delivery_id, github_event_type, github_hook_id,
+            repository_full_name, repository_id, installation_id, action,
+            status, received_at, claimed_at, claim_expires_at, claimed_by,
+            acked_at, dead_at, retry_count, last_error, payload_json,
+            headers_json, signature_valid, duplicate_of_event_id,
+            created_at, updated_at
+        FROM events
+    """
+    
+    conditions = []
+    params = []
+    
+    if status:
+        conditions.append("status = ?")
+        params.append(status)
+    
+    if repository:
+        conditions.append("repository_full_name = ?")
+        params.append(repository)
+    
+    if event_type:
+        conditions.append("github_event_type = ?")
+        params.append(event_type)
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    query += " ORDER BY received_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            columns = [description[0] for description in cursor.description]
+            result = dict(zip(columns, row))
+            # Convert datetime strings back to datetime objects
+            for field in ["received_at", "claimed_at", "claim_expires_at", "acked_at", "dead_at", "created_at", "updated_at"]:
+                if result.get(field):
+                    result[field] = datetime.fromisoformat(result[field].replace("Z", "+00:00"))
+            results.append(result)
+        
+        return results
+
+
 def mark_event_duplicate(event_id: str, duplicate_of_event_id: str) -> bool:
     """Mark an event as a duplicate of another event.
     

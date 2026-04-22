@@ -139,6 +139,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - excessive retries land in `dead`
 - tests cover reclaim behavior
 
+**Status:** ✅ **COMPLETE**
+
 ---
 
 ### Slice 8: Local drainer

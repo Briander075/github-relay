@@ -223,6 +223,106 @@ def claim_events(limit: int, consumer_id: str, lease_seconds: int) -> List[Dict[
         return results
 
 
+def reclaim_expired_events(consumer_id: str, lease_seconds: int) -> List[Dict[str, Any]]:
+    """Reclaim events that expired before the current lease.
+    
+    Increments retry_count for reclaimed events. Returns the events that were reclaimed.
+    """
+    settings = get_settings()
+    max_retries = settings.max_retries
+    now = ensure_utc_iso8601(datetime.utcnow())
+    claim_expires = ensure_utc_iso8601(
+        datetime.utcnow() + timedelta(seconds=lease_seconds)
+    )
+    
+    reclaimed = []
+    expired_to_reclaim = []
+    dead_events = []
+    
+    with get_db_cursor() as cursor:
+        # Find expired claimed events that haven't exceeded max retries
+        cursor.execute(
+            """
+            SELECT id, retry_count FROM events
+            WHERE status = 'claimed'
+            AND claimed_by IS NOT NULL
+            AND claim_expires_at < ?
+            AND retry_count < ?
+            """,
+            (now, max_retries),
+        )
+        expired_events = cursor.fetchall()
+        
+        for row in expired_events:
+            event_id = row[0]
+            retry_count = row[1]
+            expired_to_reclaim.append(event_id)
+            
+            # Increment retry count
+            cursor.execute(
+                """
+                UPDATE events
+                SET 
+                    retry_count = retry_count + 1,
+                    claimed_at = ?,
+                    claim_expires_at = ?,
+                    claimed_by = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, claim_expires, consumer_id, now, event_id),
+            )
+            
+            # Check if now exceeds max retries
+            new_retry_count = retry_count + 1
+            if new_retry_count >= max_retries:
+                # Mark as dead
+                cursor.execute(
+                    """
+                    UPDATE events
+                    SET 
+                        status = 'dead',
+                        dead_at = ?,
+                        updated_at = ?,
+                        last_error = ?,
+                        claimed_by = NULL,
+                        claim_expires_at = NULL
+                    WHERE id = ?
+                    """,
+                    (now, now, f"Exceeded max retries ({max_retries})", event_id),
+                )
+                dead_events.append(event_id)
+    
+    # Fetch the reclaimed events
+    if expired_to_reclaim:
+        placeholders = ",".join("?" * len(expired_to_reclaim))
+        cursor.execute(
+            f"""
+            SELECT 
+                id, github_delivery_id, github_event_type, github_hook_id,
+                repository_full_name, repository_id, installation_id, action,
+                status, received_at, claimed_at, claim_expires_at, claimed_by,
+                acked_at, dead_at, retry_count, last_error, payload_json,
+                headers_json, signature_valid, duplicate_of_event_id,
+                created_at, updated_at
+            FROM events
+            WHERE id IN ({placeholders})
+            ORDER BY received_at ASC
+            """,
+            expired_to_reclaim,
+        )
+        rows = cursor.fetchall()
+        for row in rows:
+            columns = [description[0] for description in cursor.description]
+            result = dict(zip(columns, row))
+            for field in ["received_at", "claimed_at", "claim_expires_at", "acked_at", "dead_at", "created_at", "updated_at"]:
+                if result.get(field):
+                    result[field] = datetime.fromisoformat(result[field].replace("Z", "+00:00"))
+            reclaimed.append(result)
+    
+    return reclaimed
+
+
 def claim_event(event_id: str, claim_by: str) -> bool:
     """Claim an event for processing.
     

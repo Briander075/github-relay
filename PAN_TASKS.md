@@ -158,6 +158,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 - drainer survives empty polls and relay restarts
 - drainer can be stopped mid-batch without silent event loss
 
+**Status:** ✅ **COMPLETE**
+
 ---
 
 ### Slice 9: Failure reporting endpoint (optional but recommended)

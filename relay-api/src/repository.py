@@ -44,8 +44,14 @@ def insert_event(
 ) -> str:
     """Insert a new event into the database.
     
-    Returns the event ID.
+    Returns the event ID. If the github_delivery_id already exists,
+    returns the ID of the existing event (idempotent behavior).
     """
+    # First check if the delivery ID already exists
+    existing = get_events_by_github_delivery_id(github_delivery_id)
+    if existing:
+        return existing["id"]
+    
     # Generate a unique event ID (UUID4)
     event_id = str(uuid.uuid4())
     now = ensure_utc_iso8601(datetime.utcnow())

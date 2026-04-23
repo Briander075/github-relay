@@ -57,37 +57,50 @@ class Drainer:
 
     def claim_events(self):
         """Claim a batch of pending events from the relay."""
-        try:
-            response = requests.post(
-                f"{self.relay_url}/api/v1/drain/claim",
-                headers=self._build_headers(),
-                json={
-                    "consumer_id": self.consumer_id,
-                    "limit": self.batch_size,
-                    "lease_seconds": self.lease_seconds,
-                },
-                timeout=30,
-            )
+        max_retries = 3
+        retry_delay = 5  # seconds
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{self.relay_url}/api/v1/drain/claim",
+                    headers=self._build_headers(),
+                    json={
+                        "consumer_id": self.consumer_id,
+                        "limit": self.batch_size,
+                        "lease_seconds": self.lease_seconds,
+                    },
+                    timeout=30,
+                )
 
-            if response.status_code == 401:
-                self._log("ERROR", "Authentication failed - check DRAINER_BEARER_TOKEN")
+                if response.status_code == 401:
+                    self._log("ERROR", "Authentication failed - check DRAINER_BEARER_TOKEN")
+                    return []
+                elif response.status_code != 200:
+                    self._log("WARN", f"Claim attempt {attempt}/{max_retries} failed: {response.status_code} {response.text}")
+                    if attempt < max_retries:
+                        self._log("INFO", f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        continue
+                    return []
+
+                result = response.json()
+                events = result.get("events", [])
+                claimed_count = result.get("claimed_count", 0)
+
+                if events:
+                    self._log("INFO", f"Claimed {claimed_count} events for consumer {self.consumer_id}")
+
+                return events
+
+            except requests.exceptions.RequestException as e:
+                self._log("WARN", f"Request attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                    self._log("INFO", f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    self._log("ERROR", f"All {max_retries} claim attempts failed - drainer will continue polling")
                 return []
-            elif response.status_code != 200:
-                self._log("ERROR", f"Claim failed: {response.status_code} {response.text}")
-                return []
-
-            result = response.json()
-            events = result.get("events", [])
-            claimed_count = result.get("claimed_count", 0)
-
-            if events:
-                self._log("INFO", f"Claimed {claimed_count} events for consumer {self.consumer_id}")
-
-            return events
-
-        except requests.exceptions.RequestException as e:
-            self._log("ERROR", f"Request failed: {e}")
-            return []
 
     def process_event(self, event):
         """Process a single event. Override this in subclasses for custom logic."""
@@ -149,6 +162,9 @@ class Drainer:
         """Main drainer loop."""
         self._log("INFO", f"Starting drainer for consumer {self.consumer_id}")
         self._log("INFO", f"Relay URL: {self.relay_url}")
+        self._log("INFO", f"Batch size: {self.batch_size}")
+        self._log("INFO", f"Poll interval: {self.poll_interval}s")
+        self._log("INFO", f"Lease timeout: {self.lease_seconds}s")
 
         while True:
             # Claim events

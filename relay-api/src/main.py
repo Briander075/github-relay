@@ -71,6 +71,8 @@ def health_check_v1():
 @app.get("/health", tags=["System"])
 def health_check():
     """Health check endpoint for container orchestration and monitoring."""
+    from datetime import datetime, timezone
+    
     try:
         # Test database connectivity
         try:
@@ -83,7 +85,7 @@ def health_check():
             "status": "healthy",
             "service": "github-relay-api",
             "version": "0.1.0",
-            "timestamp": "2026-04-20T00:00:00Z",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "database": {
                 "pending": counts.get("pending", 0),
                 "claimed": counts.get("claimed", 0),
@@ -94,13 +96,16 @@ def health_check():
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {
-            "status": "degraded",
-            "service": "github-relay-api",
-            "version": "0.1.0",
-            "timestamp": "2026-04-20T00:00:00Z",
-            "error": str(e)
-        }, 503
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "service": "github-relay-api",
+                "version": "0.1.0",
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "error": str(e)
+            }
+        )
 
 @app.post("/github/webhook", tags=["Webhooks"])
 async def receive_github_webhook(

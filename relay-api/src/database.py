@@ -55,6 +55,15 @@ def get_connection() -> sqlite3.Connection:
     return _thread_local.connection
 
 
+def invalidate_thread_local_connection():
+    """Invalidate the thread-local database connection."""
+    if hasattr(_thread_local, "connection"):
+        conn = _thread_local.connection
+        if conn:
+            conn.close()
+        delattr(_thread_local, "connection")
+
+
 def get_new_connection() -> sqlite3.Connection:
     """Get a new database connection (bypass thread-local cache)."""
     db_path = get_db_path()

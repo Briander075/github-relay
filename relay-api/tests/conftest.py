@@ -14,6 +14,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import pytest
 from datetime import datetime
 
+from database import init_db
+from repository import (
+    insert_event,
+    get_pending_event,
+    claim_event,
+    ack_event,
+    update_event_error,
+    mark_event_dead,
+    mark_event_duplicate,
+    get_event_by_id,
+    get_events_by_github_delivery_id,
+    get_event_count,
+    cleanup_old_ack_events,
+    ensure_utc_iso8601,
+)
+
 
 def cleanup_database(db_path: Path):
     """Clean up the test database file."""
@@ -40,16 +56,22 @@ def cleanup_test_db():
     else:
         # Import config after adding to path
         from config import get_settings
-        db_path = get_settings().db_path
-        if not db_path:
+        db_path_val = get_settings().db_path
+        if db_path_val:
+            db_path = Path(db_path_val)
+        else:
             db_path = Path.home() / ".hermes" / "github-relay" / "events.db"
-    
+
     # Clean up before each test
     if db_path.exists():
         cleanup_database(db_path)
-    
+
+    # Clear thread-local connections to ensure fresh connection
+    # Do this AFTER cleanup to avoid holding stale connections
+    cleanup_thread_local_connections()
+
     yield
-    
+
     # Clean up after each test
     if db_path.exists():
         cleanup_database(db_path)
@@ -74,12 +96,19 @@ def temp_db_path():
 @pytest.fixture(scope="function")
 def patch_db_path(temp_db_path):
     """Patch the database path for the duration of the test and initialize it."""
+    from database import init_db, invalidate_thread_local_connection
+    
     with patch.dict(os.environ, {"DB_PATH": str(temp_db_path)}, clear=True):
-        # Re-initialize settings to pick up the new DB_PATH
-        if "relay-api.src.config" in sys.modules:
-            del sys.modules["relay-api.src.config"]
-        if "relay-api.src.database" in sys.modules:
-            del sys.modules["relay-api.src.database"]
+        # Update the global settings instance to use the new DB_PATH
+        from config import get_settings, _settings
+        if _settings is not None:
+            _settings.db_path = str(temp_db_path)
+        else:
+            # Create a new settings instance if none exists
+            _settings = get_settings()
+        
+        # Clear thread-local connections to ensure fresh connection
+        invalidate_thread_local_connection()
         
         # Initialize the database fresh for each test
         init_db()
@@ -325,6 +354,7 @@ def test_get_event_count(patch_db_path, cleanup_thread_local):
 
 def test_ensure_utc_iso8601():
     """Test the ensure_utc_iso8601 helper function."""
+    from repository import ensure_utc_iso8601
     # Test with None
     result = ensure_utc_iso8601(None)
     assert result.endswith("Z")
@@ -359,7 +389,7 @@ def test_cleanup_old_ack_events(patch_db_path, cleanup_thread_local):
 
 
 def test_duplicate_delivery_id_handling(patch_db_path, cleanup_thread_local):
-    """Test handling of duplicate GitHub delivery IDs."""
+    """Test handling of duplicate GitHub delivery IDs (idempotent behavior)."""
     # Insert first event
     event_id1 = insert_event(
         github_delivery_id="same_delivery_id",
@@ -367,19 +397,20 @@ def test_duplicate_delivery_id_handling(patch_db_path, cleanup_thread_local):
         payload_json='{"ref": "main"}',
     )
     
-    # Insert second event with same delivery ID
+    # Insert second event with same delivery ID - should return same ID
     event_id2 = insert_event(
         github_delivery_id="same_delivery_id",
         github_event_type="push",
         payload_json='{"ref": "develop"}',
     )
     
-    # Both should exist with different IDs
-    event1 = get_event_by_id(event_id1)
-    event2 = get_event_by_id(event_id2)
+    # With idempotent behavior, both should have the same ID
+    assert event_id1 == event_id2
     
-    assert event1["id"] != event2["id"]
-    assert event1["github_delivery_id"] == event2["github_delivery_id"]
+    # Verify only one event exists for this delivery ID
+    event = get_event_by_id(event_id1)
+    assert event["github_delivery_id"] == "same_delivery_id"
+    assert event["status"] == "pending"
 
 
 if __name__ == "__main__":

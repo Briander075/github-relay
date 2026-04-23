@@ -64,9 +64,11 @@ class Drainer:
             try:
                 response = requests.post(
                     f"{self.relay_url}/api/v1/drain/claim",
-                    headers=self._build_headers(),
-                    json={
-                        "consumer_id": self.consumer_id,
+                    headers={
+                        **self._build_headers(),
+                        "X-Consumer-Id": self.consumer_id,
+                    },
+                    params={
                         "limit": self.batch_size,
                         "lease_seconds": self.lease_seconds,
                     },

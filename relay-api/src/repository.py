@@ -46,6 +46,9 @@ def insert_event(
     
     Returns the event ID. If the github_delivery_id already exists,
     returns the ID of the existing event (idempotent behavior).
+    
+    Handles concurrent duplicate insertions by catching SQLite UNIQUE constraint
+    violations and returning the existing event ID.
     """
     # First check if the delivery ID already exists
     existing = get_events_by_github_delivery_id(github_delivery_id)
@@ -57,44 +60,53 @@ def insert_event(
     now = ensure_utc_iso8601(datetime.utcnow())
     
     with get_db_cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO events (
-                id, github_delivery_id, github_event_type, github_hook_id,
-                repository_full_name, repository_id, installation_id, action,
-                status, received_at, claimed_at, claim_expires_at, claimed_by,
-                acked_at, dead_at, retry_count, last_error, payload_json,
-                headers_json, signature_valid, duplicate_of_event_id,
-                created_at, updated_at
+        try:
+            cursor.execute(
+                """
+                INSERT INTO events (
+                    id, github_delivery_id, github_event_type, github_hook_id,
+                    repository_full_name, repository_id, installation_id, action,
+                    status, received_at, claimed_at, claim_expires_at, claimed_by,
+                    acked_at, dead_at, retry_count, last_error, payload_json,
+                    headers_json, signature_valid, duplicate_of_event_id,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    github_delivery_id,
+                    github_event_type,
+                    github_hook_id,
+                    repository_full_name,
+                    repository_id,
+                    installation_id,
+                    action,
+                    "pending",
+                    now,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    0,
+                    None,
+                    payload_json,
+                    headers_json,
+                    signature_valid,
+                    duplicate_of_event_id,
+                    now,
+                    now,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                event_id,
-                github_delivery_id,
-                github_event_type,
-                github_hook_id,
-                repository_full_name,
-                repository_id,
-                installation_id,
-                action,
-                "pending",
-                now,
-                None,
-                None,
-                None,
-                None,
-                None,
-                0,
-                None,
-                payload_json,
-                headers_json,
-                signature_valid,
-                duplicate_of_event_id,
-                now,
-                now,
-            ),
-        )
+        except sqlite3.IntegrityError as e:
+            # Handle race condition: another process inserted the same delivery_id
+            # between our check and the insert. Return the existing event ID.
+            if "UNIQUE constraint failed" in str(e) and "github_delivery_id" in str(e):
+                existing = get_events_by_github_delivery_id(github_delivery_id)
+                if existing:
+                    return existing["id"]
+            raise e
     
     return event_id
 

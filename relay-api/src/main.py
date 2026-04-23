@@ -233,13 +233,14 @@ async def receive_github_webhook(
 @app.post("/api/v1/drain/claim", tags=["Drain"])
 async def drain_claim(
     request: Request,
-    consumer_id: str = Header(..., alias="X-Consumer-Id"),
+    consumer_id: str = Header(None, alias="X-Consumer-Id"),
     limit: int = 10,
     lease_seconds: int = 300,
 ):
     """Atomically claim a batch of pending events for processing.
     
     Authentication: Bearer token required in Authorization header.
+    Supports both header (X-Consumer-Id) and JSON body parameter for consumer_id.
     """
     # Validate bearer token from Authorization header
     auth_header = request.headers.get("Authorization", "")
@@ -251,6 +252,17 @@ async def drain_claim(
     
     if settings.bearer_token and token != settings.bearer_token:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
+    
+    # Get consumer_id from JSON body if not in header
+    try:
+        body = await request.json()
+        if "consumer_id" in body:
+            consumer_id = body["consumer_id"]
+    except:
+        pass
+    
+    if not consumer_id:
+        raise HTTPException(status_code=400, detail="Missing consumer_id - use X-Consumer-Id header or JSON body")
     
     # Claim events
     try:

@@ -7,6 +7,7 @@ It receives GitHub webhooks and stores them in SQLite for later draining.
 
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
+from typing import Optional
 import hashlib
 import hmac
 import json

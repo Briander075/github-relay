@@ -104,9 +104,9 @@ def test_claim_and_ack_event():
 
 
 def test_duplicate_event():
-    """Test handling duplicate events."""
+    """Test handling duplicate events (idempotent delivery)."""
     from database import init_db
-    from repository import insert_event, mark_event_duplicate, get_events_by_github_delivery_id
+    from repository import insert_event, get_events_by_github_delivery_id
     
     # Initialize database
     init_db()
@@ -118,20 +118,22 @@ def test_duplicate_event():
         payload_json='{"ref": "main"}',
     )
     
-    # Insert duplicate event
+    # Insert duplicate event - should return same ID (idempotent)
     event2_id = insert_event(
         github_delivery_id="delivery-789",  # Same delivery ID
         github_event_type="push",
         payload_json='{"ref": "main"}',
     )
     
-    # Mark second event as duplicate
-    assert mark_event_duplicate(event2_id, event1_id) is True
+    # With UNIQUE constraint, duplicate returns same event_id
+    assert event1_id == event2_id
     
-    # Verify duplicate was marked
+    # Verify only one event exists for this delivery ID
     event = get_events_by_github_delivery_id("delivery-789")
     assert event is not None
-    assert event["status"] == "duplicate" or event["id"] == event1_id
+    assert event["id"] == event1_id
+    assert event["github_delivery_id"] == "delivery-789"
+    assert event["status"] == "pending"
 
 
 def test_claim_concurrent():
@@ -230,3 +232,7 @@ def test_query_events():
     # Test limit and offset
     limited = query_events(limit=2, offset=0)
     assert len(limited) <= 2
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

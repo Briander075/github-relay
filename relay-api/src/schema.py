@@ -8,7 +8,7 @@ This module contains the SQL statements for creating the events table and indexe
 EVENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
-  github_delivery_id TEXT,
+  github_delivery_id TEXT UNIQUE,
   github_event_type TEXT NOT NULL,
   github_hook_id TEXT,
   repository_full_name TEXT,

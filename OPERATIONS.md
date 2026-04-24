@@ -106,7 +106,7 @@ for e in events[:5]:
    openssl rand -hex 32
    ```
 
-2. Update the `BEARER_TOKEN` in your `.env` file
+2. Update the `DRAINER_BEARER_TOKEN` in your `.env` file
 
 3. Restart the relay:
    ```bash

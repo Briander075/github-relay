@@ -1,6 +1,6 @@
 # GitHub Relay - Relay API
 
-Slice 1: Project Skeleton with Basic API and Health Endpoint
+The durable webhook relay service that bridges GitHub webhooks to intermittent local machines.
 
 ## Overview
 
@@ -32,36 +32,9 @@ This is the reference implementation of the Asynchronous Relay Pattern for bridg
 
 ## Running the Relay API
 
-The script can be activated in two ways:
+The relay can be run in development or production environments.
 
-### Primary Trigger: Automatic Background Polling
-
-The local drainer runs automatically via `launchd` (macOS) or `systemd` (Linux) for continuous, hands-off operation:
-
-**macOS (launchd):**
-```bash
-# Load the agent to start automatically at login
-launchctl load ~/Library/LaunchAgents/com.github.relay.drainer.plist
-
-# Unload to stop
-launchctl unload ~/Library/LaunchAgents/com.github.relay.drainer.plist
-```
-
-**Linux (systemd):**
-```bash
-# Enable to start at boot
-sudo systemctl enable github-relay-drainer
-
-# Start immediately
-sudo systemctl start github-relay-drainer
-
-# Stop
-sudo systemctl stop github-relay-drainer
-```
-
-### Secondary Trigger: Manual Run for Testing/Troubleshooting
-
-For development, debugging, or manual intervention:
+### Development
 
 ```bash
 cd relay-api
@@ -83,29 +56,78 @@ The API will be available at `http://localhost:8000`
 docker-compose up --build
 ```
 
-### API Endpoints
+## API Endpoints
 
-#### Health Check
+### Health Check
 
 ```
-GET /health
+GET /healthz
 ```
 
 Response:
 ```json
-{
-  "status": "healthy",
-  "service": "github-relay-api",
-  "version": "0.1.0",
-  "timestamp": "2026-04-20T00:00:00Z"
-}
+{"ok": true}
 ```
 
-#### Swagger UI
+### GitHub Webhook
+
+```
+POST /github/webhook
+```
+
+Accepts GitHub webhook deliveries with signature validation.
+
+### Claim Events
+
+```
+POST /api/v1/drain/claim
+```
+
+Claims pending events for processing by a drainer.
+
+### Ack Events
+
+```
+POST /api/v1/drain/ack
+```
+
+Marks events as successfully processed.
+
+### Fail Events
+
+```
+POST /api/v1/drain/fail
+```
+
+Reports processing failures and optionally requeues events.
+
+### List Events
+
+```
+GET /api/v1/events
+```
+
+Lists events with filters for debugging and inspection.
+
+### Swagger UI
 
 ```
 http://localhost:8000/docs
 ```
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DRAINER_BEARER_TOKEN` | Authentication token for drainer API | Yes |
+| `DB_PATH` | Path to SQLite database | No, defaults to `db.sqlite3` |
+| `LOG_LEVEL` | Logging level (debug/info/warning/error) | No, defaults to `info` |
+| `HOST` | Server host binding | No, defaults to `0.0.0.0` |
+| `PORT` | Server port | No, defaults to `8000` |
+| `LEASE_SECONDS` | Claim lease duration | No, defaults to `300` |
+| `MAX_BATCH_SIZE` | Maximum events per claim | No, defaults to `100` |
+| `MAX_RETRIES` | Maximum retry attempts | No, defaults to `10` |
+| `ACK_RETENTION_DAYS` | Days to retain acked events | No, defaults to `14` |
 
 ## Structure
 
@@ -119,19 +141,13 @@ relay-api/
 └── README.md           # This file
 ```
 
-## Next Steps
+## Production Deployment
 
-- Slice 2: SQLite storage layer
-- Slice 3: GitHub webhook validation
-- Slice 4: Idempotent duplicate handling
-- Slice 5: Claim endpoint
-- Slice 6: Ack endpoint
-- Slice 7: Lease expiry and retry behavior
-- Slice 8: Local drainer
-- Slice 9: Failure reporting endpoint
-- Slice 10: Debug/inspection tools
-- Slice 11: Deployment packaging
-- Slice 12: Recovery and ops docs
+For production deployment instructions, see the main [DEPLOYMENT.md](../DEPLOYMENT.md) in the project root.
+
+## Operations
+
+For operational procedures including monitoring, troubleshooting, and recovery, see [OPERATIONS.md](../OPERATIONS.md).
 
 ## License
 

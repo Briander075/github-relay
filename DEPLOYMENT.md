@@ -13,8 +13,8 @@ This guide covers deploying the GitHub Relay for production use on Synology NAS 
 Create a `.env` file with the following required variables:
 
 ```bash
-# Required for API authentication
-BEARER_TOKEN=your-secure-bearer-token-here
+# Required for drainer authentication
+DRAINER_BEARER_TOKEN=your-secure-bearer-token-here
 
 # Database path (default: /data/db.sqlite3)
 # DB_PATH=/data/db.sqlite3

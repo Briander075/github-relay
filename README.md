@@ -44,6 +44,17 @@ It breaks the work into implementation slices that are small enough to ship with
 Use it as the execution plan.
 Do one slice at a time.
 
+### 4. `DEPLOYMENT.md` (for production deployment)
+Read this when you're ready to deploy.
+It covers:
+- Docker Compose setup
+- Environment variable configuration
+- Cloudflare Tunnel integration
+- GitHub webhook setup
+- Database persistence and backup
+
+Use it as your production deployment checklist.
+
 ## Intended v1 stack
 - FastAPI
 - SQLite

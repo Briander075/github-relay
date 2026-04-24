@@ -495,6 +495,65 @@ def list_events(status: str = None, limit: int = 100, offset: int = 0):
     }
 
 
+@app.get("/api/v1/events", tags=["Events"])
+async def list_events_api(
+    request: Request,
+    status: Optional[str] = None,
+    repo: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List events with filters and authentication.
+    
+    Authentication: Bearer token required in Authorization header.
+    Filters: status (pending/claimed/acked/dead), repo (full name), event_type (push/pull_request/etc)
+    """
+    # Validate bearer token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    settings = get_settings()
+    
+    if settings.bearer_token and token != settings.bearer_token:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    
+    # Call query_events with filters
+    try:
+        from .repository import query_events
+    except ImportError:
+        from repository import query_events
+    
+    events = query_events(status=status, repo=repo, event_type=event_type, limit=limit, offset=offset)
+    
+    # Build response
+    events_list = []
+    for event in events:
+        events_list.append({
+            "event_id": event["id"],
+            "github_delivery_id": event["github_delivery_id"],
+            "github_event_type": event["github_event_type"],
+            "repository_full_name": event["repository_full_name"],
+            "action": event["action"],
+            "status": event["status"],
+            "retry_count": event["retry_count"],
+            "last_error": event["last_error"],
+            "received_at": event["received_at"].isoformat().replace("+00:00", "Z") if event["received_at"] else None,
+            "claimed_at": event["claimed_at"].isoformat().replace("+00:00", "Z") if event["claimed_at"] else None,
+            "claim_expires_at": event["claim_expires_at"].isoformat().replace("+00:00", "Z") if event["claim_expires_at"] else None,
+            "payload": json.loads(event["payload_json"])
+        })
+    
+    return {
+        "events": events_list,
+        "count": len(events_list),
+        "limit": limit,
+        "offset": offset
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

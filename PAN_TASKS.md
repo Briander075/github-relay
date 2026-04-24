@@ -208,8 +208,8 @@ The goal is to keep the work sliced small enough that implementation stays real 
 **Done when:**
 - the stack can be launched on Synology with a persistent DB
 - restart does not lose queued events
-
 ---
+
 
 ### Slice 12: Recovery and ops docs
 **Goal:** Prevent future confusion at 11 PM.
@@ -223,6 +223,10 @@ The goal is to keep the work sliced small enough that implementation stays real 
 
 **Done when:**
 - a future human can operate the system without reverse-engineering the code
+
+**Status:** ✅ **COMPLETE**
+
+---
 
 ## Nice-to-have after v1
 Do not front-load these.

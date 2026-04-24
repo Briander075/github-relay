@@ -55,6 +55,17 @@ It covers:
 
 Use it as your production deployment checklist.
 
+### 5. `OPERATIONS.md` (for operational procedures)
+Read this for day-to-day operations:
+- Monitoring health
+- Inspecting queue state
+- Rotating secrets
+- Recovering stuck events
+- Manual replay procedures
+- Troubleshooting guide
+
+Use it for production operations and incident response.
+
 ## Intended v1 stack
 - FastAPI
 - SQLite
